@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // API URL - will be set based on deployment
     const API_URL = location.hostname === 'localhost' || location.hostname === '127.0.0.1' 
-        ? 'http://localhost:3000' 
+        ? 'http://localhost:3000/api' 
         : `https://${location.hostname}/api`;
 
     // Check authentication status

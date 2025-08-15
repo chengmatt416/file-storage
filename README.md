@@ -16,7 +16,12 @@ A web application that allows users to upload, share, and manage files using Git
 
 - Node.js (v14 or higher)
 - GitHub account
-- GitHub Personal Access Token with repo permissions
+- GitHub Personal Access Token with the following permissions:
+  - `repo` (Full control of private repositories) - Required for:
+    - Reading repository contents (`Contents: Read`)
+    - Creating and updating files (`Contents: Write`)
+    - Deleting files (`Contents: Write`)
+  - `user:read` (Read user profile data) - Required for token validation
 
 ### Installation
 
@@ -45,6 +50,28 @@ Edit the `.env` file with your GitHub information:
 - `GITHUB_TOKEN`: Your GitHub personal access token
 - `REPO_OWNER`: Your GitHub username
 - `FILE_STORAGE_REPO`: Name of the repository to store files (create this repo first)
+
+## GitHub Token Permissions
+
+To use this application, you need to create a GitHub Personal Access Token with the following permissions:
+
+### Required Scopes:
+- **`repo`** (Full control of private repositories)
+  - Provides access to read and write repository contents
+  - Required for uploading, listing, and deleting files
+  - Includes: `repo:status`, `repo_deployment`, `public_repo`, `repo:invite`, `security_events`
+  
+- **`user:read`** (Read user profile data)  
+  - Required for token validation and authentication
+  - Allows the app to verify the token is valid by reading user profile
+
+### Creating a Personal Access Token:
+1. Go to GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Click "Generate new token"
+3. Select the scopes: `repo` and `user:read`
+4. Copy the generated token and use it as your `GITHUB_TOKEN` in the `.env` file
+
+**Note:** Keep your token secure and never commit it to version control.
 
 4. **Start the development server**
 
