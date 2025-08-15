@@ -49,6 +49,27 @@ header p {
     color: #c9d1d9;
 }
 
+/* Demo Banner */
+.demo-banner {
+    background-color: #fff3cd;
+    border-bottom: 1px solid #ffeaa7;
+    padding: 0.75rem 0;
+    text-align: center;
+    font-size: 0.9rem;
+    color: #856404;
+}
+
+.demo-banner .container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.demo-banner i {
+    color: #856404;
+}
+
 main {
     padding: 2rem 0;
     display: flex;

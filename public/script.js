@@ -21,6 +21,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const API_URL = location.hostname === 'localhost' || location.hostname === '127.0.0.1' 
         ? 'http://localhost:3000' 
         : `https://${location.hostname}/api`;
+    
+    // Demo mode for GitHub Pages deployment (no backend available)
+    const DEMO_MODE = location.hostname.includes('github.io') || 
+                     location.hostname.includes('pages.dev') || 
+                     (location.hostname === 'localhost' && location.port === '8080');
+
+    // Show demo banner if in demo mode
+    if (DEMO_MODE) {
+        document.getElementById('demo-banner').style.display = 'block';
+    }
 
     // Check authentication status
     checkAuth();
@@ -106,54 +116,73 @@ document.addEventListener('DOMContentLoaded', function() {
         try {
             uploadProgress.style.display = 'block';
             
-            // Create FormData object
-            const formData = new FormData();
-            for (const file of fileInput.files) {
-                formData.append('files', file);
-            }
-            
             // Get token from localStorage
             const token = localStorage.getItem('github_token');
             if (!token) {
                 throw new Error('Authentication required');
             }
             
-            // Upload files
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${API_URL}/upload`, true);
-            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-            
-            // Track upload progress
-            xhr.upload.onprogress = function(event) {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    progressBar.style.width = percentComplete + '%';
-                    progressPercent.textContent = percentComplete + '%';
+            if (DEMO_MODE) {
+                // In demo mode, simulate upload progress
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += Math.random() * 15;
+                    if (progress >= 100) {
+                        progress = 100;
+                        clearInterval(interval);
+                        uploadProgress.style.display = 'none';
+                        showAlert(`Successfully uploaded ${fileInput.files.length} files to GitHub (Demo Mode)`, 'success');
+                        uploadForm.reset();
+                        filePreview.innerHTML = '';
+                        loadFiles();
+                    }
+                    progressBar.style.width = progress + '%';
+                    progressPercent.textContent = Math.round(progress) + '%';
+                }, 200);
+            } else {
+                // Create FormData object
+                const formData = new FormData();
+                for (const file of fileInput.files) {
+                    formData.append('files', file);
                 }
-            };
-            
-            // Handle completion
-            xhr.onload = function() {
-                uploadProgress.style.display = 'none';
-                if (xhr.status === 200) {
-                    const response = JSON.parse(xhr.responseText);
-                    showAlert(`Successfully uploaded ${response.uploadedFiles} files to GitHub`, 'success');
-                    uploadForm.reset();
-                    filePreview.innerHTML = '';
-                    loadFiles();
-                } else {
-                    const error = JSON.parse(xhr.responseText);
-                    showAlert(error.message || 'Error uploading files', 'error');
-                }
-            };
-            
-            // Handle errors
-            xhr.onerror = function() {
-                uploadProgress.style.display = 'none';
-                showAlert('Network error occurred during upload', 'error');
-            };
-            
-            xhr.send(formData);
+                
+                // Upload files
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `${API_URL}/upload`, true);
+                xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+                
+                // Track upload progress
+                xhr.upload.onprogress = function(event) {
+                    if (event.lengthComputable) {
+                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+                        progressBar.style.width = percentComplete + '%';
+                        progressPercent.textContent = percentComplete + '%';
+                    }
+                };
+                
+                // Handle completion
+                xhr.onload = function() {
+                    uploadProgress.style.display = 'none';
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert(`Successfully uploaded ${response.uploadedFiles} files to GitHub`, 'success');
+                        uploadForm.reset();
+                        filePreview.innerHTML = '';
+                        loadFiles();
+                    } else {
+                        const error = JSON.parse(xhr.responseText);
+                        showAlert(error.message || 'Error uploading files', 'error');
+                    }
+                };
+                
+                // Handle errors
+                xhr.onerror = function() {
+                    uploadProgress.style.display = 'none';
+                    showAlert('Network error occurred during upload', 'error');
+                };
+                
+                xhr.send(formData);
+            }
             
         } catch (error) {
             uploadProgress.style.display = 'none';
@@ -171,22 +200,34 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (token && user) {
             try {
-                // Validate token
-                const response = await fetch(`${API_URL}/validate-token`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                if (response.ok) {
+                if (DEMO_MODE) {
+                    // In demo mode, skip API validation and use stored user data
                     showUserInterface(JSON.parse(user));
                     loadFiles();
                 } else {
-                    handleLogout();
+                    // Validate token with API
+                    const response = await fetch(`${API_URL}/validate-token`, {
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        showUserInterface(JSON.parse(user));
+                        loadFiles();
+                    } else {
+                        handleLogout();
+                    }
                 }
             } catch (error) {
                 console.error('Auth validation error:', error);
-                handleLogout();
+                if (!DEMO_MODE) {
+                    handleLogout();
+                } else {
+                    // In demo mode, continue with stored data even if there's an error
+                    showUserInterface(JSON.parse(user));
+                    loadFiles();
+                }
             }
         } else {
             showAuthInterface();
@@ -236,18 +277,46 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Authentication required');
             }
             
-            const response = await fetch(`${API_URL}/files`, {
-                headers: {
-                    'Authorization': `Bearer ${token}`
+            if (DEMO_MODE) {
+                // In demo mode, show sample files
+                const demoFiles = [
+                    {
+                        name: 'sample-document.pdf',
+                        size: 245760,
+                        date: new Date().toISOString(),
+                        path: 'files/sample-document.pdf',
+                        downloadUrl: '#'
+                    },
+                    {
+                        name: 'image-example.jpg',
+                        size: 102400,
+                        date: new Date(Date.now() - 86400000).toISOString(),
+                        path: 'files/image-example.jpg',
+                        downloadUrl: '#'
+                    },
+                    {
+                        name: 'data.xlsx',
+                        size: 51200,
+                        date: new Date(Date.now() - 172800000).toISOString(),
+                        path: 'files/data.xlsx',
+                        downloadUrl: '#'
+                    }
+                ];
+                updateFileListUI(demoFiles);
+            } else {
+                const response = await fetch(`${API_URL}/files`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to load files');
                 }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to load files');
+                
+                const data = await response.json();
+                updateFileListUI(data.files);
             }
-            
-            const data = await response.json();
-            updateFileListUI(data.files);
             
         } catch (error) {
             showAlert(error.message, 'error');
@@ -354,22 +423,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Authentication required');
             }
             
-            const response = await fetch(`${API_URL}/files`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ path })
-            });
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Failed to delete file');
+            if (DEMO_MODE) {
+                // In demo mode, simulate file deletion
+                showAlert('File deleted successfully (Demo Mode)', 'success');
+                loadFiles();
+            } else {
+                const response = await fetch(`${API_URL}/files`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ path })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to delete file');
+                }
+                
+                showAlert('File deleted successfully', 'success');
+                loadFiles();
             }
-            
-            showAlert('File deleted successfully', 'success');
-            loadFiles();
             
         } catch (error) {
             showAlert(error.message, 'error');
