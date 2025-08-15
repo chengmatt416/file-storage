@@ -17,11 +17,17 @@
 
     <main class="container">
         <section class="auth-section" id="auth-section">
-            <h2>Authentication</h2>
+            <h2>GitHub Authentication</h2>
             <div class="auth-content">
-                <p>Please authenticate with GitHub to access file sharing features.</p>
+                <p>This app stores your files directly in a GitHub repository. To get started:</p>
+                <ol>
+                    <li>Create a <a href="https://github.com/settings/tokens" target="_blank">GitHub Personal Access Token</a> with <strong>repo</strong> permissions</li>
+                    <li>Make sure you have a GitHub repository where files will be stored</li>
+                    <li>Click the login button below to configure your token and repository</li>
+                </ol>
+                <br>
                 <button id="login-btn" class="btn primary-btn">
-                    <i class="fab fa-github"></i> Login with GitHub
+                    <i class="fab fa-github"></i> Configure GitHub Access
                 </button>
             </div>
         </section>
