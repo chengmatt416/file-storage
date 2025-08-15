@@ -17,10 +17,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const progressBar = document.querySelector('.progress-bar');
     const progressPercent = document.getElementById('progress-percent');
 
-    // API URL - will be set based on deployment
-    const API_URL = location.hostname === 'localhost' || location.hostname === '127.0.0.1' 
-        ? 'http://localhost:3000' 
-        : `https://${location.hostname}/api`;
+    // GitHub API configuration
+    const GITHUB_API_BASE = 'https://api.github.com';
+    
+    // Configuration - these will be set by user
+    let REPO_OWNER = localStorage.getItem('repo_owner') || 'chengmatt416';
+    let REPO_NAME = localStorage.getItem('repo_name') || 'file-storage';
+    let FILES_PATH = 'files'; // Path within repo where files are stored
 
     // Check authentication status
     checkAuth();
@@ -105,55 +108,39 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             uploadProgress.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressPercent.textContent = '0%';
             
-            // Create FormData object
-            const formData = new FormData();
-            for (const file of fileInput.files) {
-                formData.append('files', file);
-            }
-            
-            // Get token from localStorage
             const token = localStorage.getItem('github_token');
             if (!token) {
                 throw new Error('Authentication required');
             }
             
-            // Upload files
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', `${API_URL}/upload`, true);
-            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            // Ensure the files directory exists
+            await createFilesDirectory();
             
-            // Track upload progress
-            xhr.upload.onprogress = function(event) {
-                if (event.lengthComputable) {
-                    const percentComplete = Math.round((event.loaded / event.total) * 100);
-                    progressBar.style.width = percentComplete + '%';
-                    progressPercent.textContent = percentComplete + '%';
-                }
-            };
+            const files = Array.from(fileInput.files);
+            let uploadedCount = 0;
             
-            // Handle completion
-            xhr.onload = function() {
-                uploadProgress.style.display = 'none';
-                if (xhr.status === 200) {
-                    const response = JSON.parse(xhr.responseText);
-                    showAlert(`Successfully uploaded ${response.uploadedFiles} files to GitHub`, 'success');
-                    uploadForm.reset();
-                    filePreview.innerHTML = '';
-                    loadFiles();
-                } else {
-                    const error = JSON.parse(xhr.responseText);
-                    showAlert(error.message || 'Error uploading files', 'error');
-                }
-            };
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const progress = Math.round(((i + 0.5) / files.length) * 100);
+                progressBar.style.width = progress + '%';
+                progressPercent.textContent = `Uploading ${file.name}... ${progress}%`;
+                
+                await uploadFileToGitHub(file, token);
+                uploadedCount++;
+                
+                const finalProgress = Math.round(((i + 1) / files.length) * 100);
+                progressBar.style.width = finalProgress + '%';
+                progressPercent.textContent = finalProgress + '%';
+            }
             
-            // Handle errors
-            xhr.onerror = function() {
-                uploadProgress.style.display = 'none';
-                showAlert('Network error occurred during upload', 'error');
-            };
-            
-            xhr.send(formData);
+            uploadProgress.style.display = 'none';
+            showAlert(`Successfully uploaded ${uploadedCount} file(s) to GitHub`, 'success');
+            uploadForm.reset();
+            filePreview.innerHTML = '';
+            loadFiles();
             
         } catch (error) {
             uploadProgress.style.display = 'none';
@@ -171,15 +158,19 @@ document.addEventListener('DOMContentLoaded', function() {
         
         if (token && user) {
             try {
-                // Validate token
-                const response = await fetch(`${API_URL}/validate-token`, {
+                // Validate token with GitHub API
+                const response = await fetch(`${GITHUB_API_BASE}/user`, {
                     headers: {
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'X-GitHub-Api-Version': '2022-11-28'
                     }
                 });
                 
                 if (response.ok) {
-                    showUserInterface(JSON.parse(user));
+                    const userData = await response.json();
+                    localStorage.setItem('github_user', JSON.stringify(userData));
+                    showUserInterface(userData);
                     loadFiles();
                 } else {
                     handleLogout();
@@ -194,9 +185,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleLogin() {
-        // For demo purposes, we'll simulate GitHub OAuth
-        // In a real app, you'd redirect to GitHub OAuth flow
-        simulateGitHubAuth();
+        // Show configuration modal for GitHub token
+        showConfigModal();
     }
     
     function handleLogout() {
@@ -236,18 +226,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Authentication required');
             }
             
-            const response = await fetch(`${API_URL}/files`, {
+            // Try to get files from the repository
+            const response = await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILES_PATH}`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
                 }
             });
             
+            if (response.status === 404) {
+                // Directory doesn't exist yet, create it
+                await createFilesDirectory();
+                updateFileListUI([]);
+                return;
+            }
+            
             if (!response.ok) {
-                throw new Error('Failed to load files');
+                throw new Error('Failed to load files from GitHub');
             }
             
             const data = await response.json();
-            updateFileListUI(data.files);
+            const files = Array.isArray(data) ? data.filter(item => item.type === 'file').map(item => ({
+                name: item.name,
+                path: item.path,
+                size: item.size,
+                downloadUrl: item.download_url,
+                date: new Date(item.sha), // Use SHA as a date approximation
+                sha: item.sha
+            })) : [];
+            
+            updateFileListUI(files);
             
         } catch (error) {
             showAlert(error.message, 'error');
@@ -354,17 +363,42 @@ document.addEventListener('DOMContentLoaded', function() {
                 throw new Error('Authentication required');
             }
             
-            const response = await fetch(`${API_URL}/files`, {
+            // First, get the file's current SHA (required for deletion)
+            const getResponse = await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            
+            if (!getResponse.ok) {
+                throw new Error('Failed to get file information for deletion');
+            }
+            
+            const fileData = await getResponse.json();
+            
+            // Now delete the file
+            const deleteResponse = await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${path}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ path })
+                body: JSON.stringify({
+                    message: `Delete file: ${path.split('/').pop()}`,
+                    sha: fileData.sha,
+                    committer: {
+                        name: 'GitHub File Sharing App',
+                        email: 'noreply@github.com'
+                    }
+                })
             });
             
-            if (!response.ok) {
-                const error = await response.json();
+            if (!deleteResponse.ok) {
+                const error = await deleteResponse.json();
                 throw new Error(error.message || 'Failed to delete file');
             }
             
@@ -404,30 +438,174 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 3000);
     }
     
-    // For demo only: Simulate GitHub OAuth
-    function simulateGitHubAuth() {
-        // In a real app, you'd redirect to GitHub OAuth
-        // For demo, we'll simulate a successful authentication
+    // Helper function to create files directory in repository
+    async function createFilesDirectory() {
+        const token = localStorage.getItem('github_token');
+        if (!token) {
+            throw new Error('Authentication required');
+        }
         
-        // Simulate token and user info
-        const mockUser = {
-            login: 'chengmatt416',
-            id: 12345678,
-            avatar_url: 'https://avatars.githubusercontent.com/u/12345678?v=4',
-            name: 'Matt Cheng'
-        };
+        try {
+            // Check if directory already exists
+            const checkResponse = await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILES_PATH}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            
+            if (checkResponse.ok) {
+                return; // Directory already exists
+            }
+            
+            // Create .gitkeep file to create the directory
+            const gitkeepContent = btoa('# File Storage Directory\nThis directory stores uploaded files.\n');
+            await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILES_PATH}/.gitkeep`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: 'Initialize file storage directory',
+                    content: gitkeepContent,
+                    committer: {
+                        name: 'GitHub File Sharing App',
+                        email: 'noreply@github.com'
+                    }
+                })
+            });
+        } catch (error) {
+            console.warn('Could not create files directory:', error);
+        }
+    }
+    
+    // Helper function to upload a single file to GitHub
+    async function uploadFileToGitHub(file, token) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const fileContent = btoa(e.target.result);
+                    const filePath = `${FILES_PATH}/${file.name}`;
+                    
+                    const response = await fetch(`${GITHUB_API_BASE}/repos/${REPO_OWNER}/${REPO_NAME}/contents/${filePath}`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Accept': 'application/vnd.github.v3+json',
+                            'X-GitHub-Api-Version': '2022-11-28',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            message: `Upload file: ${file.name}`,
+                            content: fileContent,
+                            committer: {
+                                name: 'GitHub File Sharing App',
+                                email: 'noreply@github.com'
+                            }
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.message || 'Failed to upload file');
+                    }
+                    
+                    resolve();
+                } catch (error) {
+                    reject(error);
+                }
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsBinaryString(file);
+        });
+    }
+    
+    // Show configuration modal for GitHub token
+    function showConfigModal() {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>GitHub Configuration</h3>
+                <div class="form-group">
+                    <label for="github-token">GitHub Personal Access Token:</label>
+                    <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxxxxxxxx" required>
+                    <small>Token needs 'repo' permissions. <a href="https://github.com/settings/tokens" target="_blank">Create one here</a></small>
+                </div>
+                <div class="form-group">
+                    <label for="repo-owner">Repository Owner (username):</label>
+                    <input type="text" id="repo-owner" value="${REPO_OWNER}" required>
+                </div>
+                <div class="form-group">
+                    <label for="repo-name">Repository Name:</label>
+                    <input type="text" id="repo-name" value="${REPO_NAME}" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn secondary-btn" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+                    <button type="button" class="btn primary-btn" onclick="saveConfiguration()">Save & Login</button>
+                </div>
+            </div>
+        `;
         
-        const mockToken = 'gh_' + Math.random().toString(36).substring(2, 15) + 
-                         Math.random().toString(36).substring(2, 15);
+        document.body.appendChild(modal);
+        
+        // Focus on token input
+        modal.querySelector('#github-token').focus();
+    }
+    
+    // Save configuration and authenticate
+    window.saveConfiguration = async function() {
+        const token = document.getElementById('github-token').value.trim();
+        const owner = document.getElementById('repo-owner').value.trim();
+        const repo = document.getElementById('repo-name').value.trim();
+        
+        if (!token || !owner || !repo) {
+            showAlert('Please fill in all fields', 'error');
+            return;
+        }
+        
+        // Update global variables
+        REPO_OWNER = owner;
+        REPO_NAME = repo;
         
         // Save to localStorage
-        localStorage.setItem('github_token', mockToken);
-        localStorage.setItem('github_user', JSON.stringify(mockUser));
+        localStorage.setItem('github_token', token);
+        localStorage.setItem('repo_owner', owner);
+        localStorage.setItem('repo_name', repo);
         
-        // Update UI
-        showUserInterface(mockUser);
+        // Remove modal
+        document.querySelector('.modal-overlay').remove();
         
-        // Load files
-        loadFiles();
-    }
+        // Verify token and login
+        try {
+            const response = await fetch(`${GITHUB_API_BASE}/user`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Invalid GitHub token');
+            }
+            
+            const userData = await response.json();
+            localStorage.setItem('github_user', JSON.stringify(userData));
+            
+            showUserInterface(userData);
+            loadFiles();
+            showAlert('Successfully authenticated with GitHub!', 'success');
+            
+        } catch (error) {
+            showAlert(`Authentication failed: ${error.message}`, 'error');
+            localStorage.removeItem('github_token');
+            localStorage.removeItem('github_user');
+        }
+    };
 });

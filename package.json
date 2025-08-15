@@ -7,7 +7,8 @@
     "start": "node server/index.js",
     "dev": "nodemon server/index.js",
     "build": "npm run copy-public",
-    "copy-public": "mkdir -p dist && cp -r public/* dist/"
+    "copy-public": "mkdir -p dist && cp -r public/* dist/",
+    "serve": "cd dist && python3 -m http.server 8000"
   },
   "dependencies": {
     "@octokit/rest": "^18.12.0",
