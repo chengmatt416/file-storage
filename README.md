@@ -54,15 +54,33 @@ npm run dev
 
 The application will be available at http://localhost:3000
 
-### GitHub Actions Deployment
+### Deployment Options
 
-This project includes a GitHub Actions workflow to automatically deploy to GitHub Pages:
+This project supports multiple deployment platforms:
 
-1. In your GitHub repository settings, add these secrets:
-   - `GITHUB_TOKEN`: This is automatically provided by GitHub
+#### Option 1: Vercel (Recommended)
+1. Connect your GitHub repository to [Vercel](https://vercel.com)
+2. Configure environment variables in Vercel dashboard:
+   - `GITHUB_TOKEN`: Your GitHub personal access token
+   - `REPO_OWNER`: Your GitHub username  
    - `FILE_STORAGE_REPO`: Name of your file storage repository
+3. Deploy automatically on every push to main branch
 
-2. Push to the main branch to trigger automatic deployment
+#### Option 2: Railway
+1. Connect your GitHub repository to [Railway](https://railway.app)
+2. Set the same environment variables as above
+3. Railway will automatically detect the Node.js app and deploy
+
+#### Option 3: Render
+1. Connect your GitHub repository to [Render](https://render.com)
+2. Use the `render.yaml` configuration file
+3. Set environment variables in Render dashboard
+
+#### GitHub Actions Deployment
+For automated deployments, add these secrets to your GitHub repository:
+- `VERCEL_TOKEN`: Your Vercel deployment token
+- `VERCEL_ORG_ID`: Your Vercel organization ID
+- `VERCEL_PROJECT_ID`: Your Vercel project ID
 
 ## Usage
 

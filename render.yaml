@@ -1,0 +1,10 @@
+# Render deployment configuration
+services:
+  - type: web
+    name: github-file-share
+    env: node
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
